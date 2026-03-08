@@ -1,275 +1,164 @@
-# prono — Installation & Build Guide
+# Prono Web Server
 
-`prono` is a lightweight C++ web server designed to be simple, fast, and easy to build.
+**Prono** is a minimal, fast, and easy-to-build **C++17** HTTP web server focused on simplicity and low resource usage.
 
-This guide explains:
+Perfect for small static sites, embedded systems, local development tools, or learning projects.
 
-- Installing prebuilt binaries
-- Building from source
-- Running the server
-- Creating your own builds
-- Downloading releases
+Current version: v0.1.x (pre-release / early development)  
+License: [MIT](./LICENSE)
 
----
+## Features
 
-# Download (Prebuilt Binaries)
+- Single-threaded / multi-threaded modes (configurable)
+- Serves static files (HTML, CSS, JS, images, etc.)
+- Basic HTTP/1.1 support (GET, HEAD, limited POST)
+- Directory listing (optional)
+- Very small binary size (~ few hundred KB when stripped)
+- No external runtime dependencies
+- Cross-platform (Windows, Linux, macOS possible with minor tweaks)
 
-You can download the latest compiled binaries from the GitHub Releases page.
+## Quick Start
 
-## Windows
+### 1. Download prebuilt binary (recommended for most users)
 
-Download the latest Windows build:
+Go to → [Releases page](https://github.com/problox42r/pronoweb/releases/latest)
 
-https://github.com/problox42r/pronoweb/releases/latest
+- **Windows**: `prono-windows-x64.zip`
+- **Linux**  : `prono-linux-x64.tar.gz`
 
-Look for:
+**Windows example**
 
-
-prono-windows-x64.zip
-
-
-### Install Steps
-
-1. Download the zip file
-2. Extract it
-3. Open the folder
-4. Run:
-
-
+```bash
+# Extract → double-click prono.exe  or run from cmd/powershell:
 prono.exe
-
-
----
-
-## Linux
-
-Download the latest Linux binary:
-
-https://github.com/problox42r/pronoweb/releases/latest
-
-Look for:
-
-
-prono-linux-x64.tar.gz
-
-
-### Install Steps
-
-Extract and run:
-
-
-tar -xzf prono-linux-x64.tar.gz
+Linux example
+Bashtar -xzf prono-linux-x64.tar.gz
 cd prono
 chmod +x prono
 ./prono
+By default, server starts at http://localhost:8080 and serves files from the current directory.
+2. Build from source (developers / custom builds)
+Requirements
 
+C++17 compatible compiler
+GCC 7+ / Clang 5+ / MSVC 2019+
 
----
+CMake ≥ 3.16
+Git
 
-# Build From Source
-
-## Requirements
-
-You need:
-
-- C++17 compatible compiler
-- CMake 3.16+
-- Git
-
-### Linux Dependencies
-
-Ubuntu / Debian:
-
-
+Linux / macOS dependencies
+Bash# Ubuntu / Debian
+sudo apt update
 sudo apt install build-essential cmake git
 
-
-Arch:
-
-
+# Arch
 sudo pacman -S base-devel cmake git
 
-
-Fedora:
-
-
+# Fedora
 sudo dnf install gcc-c++ cmake git
-
-
----
-
-### Windows Dependencies
-
+Windows
 Install:
 
-- Visual Studio 2022
-- CMake
+Visual Studio 2022 (with Desktop development with C++ workload)
+Latest CMake
 
-Make sure the **Desktop Development with C++** workload is installed.
+Clone & Build
+Bashgit clone https://github.com/problox42r/pronoweb.git
+cd pronoweb
 
----
+mkdir build && cd build
 
-# Clone the Repository
-
-
-git clone https://github.com/YOUR_USERNAME/prono.git
-
-cd prono
-
-
----
-
-# Build Using CMake
-
-Create a build directory:
-
-
-mkdir build
-cd build
-
-
-Generate the project:
-
-
+# Normal build
 cmake ..
-
-
-Build:
-
-
 cmake --build .
 
+# Optimized release build (recommended)
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --config Release    # Windows
+# or just: cmake --build .            # Linux/macOS
+Binary location:
 
-The binary will be located in:
+Linux/macOS → build/bin/prono
+Windows    → build/bin/Release/prono.exe or build/bin/prono.exe
 
-
-build/bin/prono
-
-
-On Windows:
-
-
-build/bin/prono.exe
-
-
----
-
-# Run the Server
-
-Linux:
-
-
-./prono
-
-
-Windows:
-
-
-prono.exe
-
-
----
-
-# Build Release Version
-
-For optimized builds:
-
-
+Running the Server
+Basic usage:
+Bash./prono                # Linux/macOS
+prono.exe              # Windows
+Common options (early versions — check ./prono --help if implemented):
+Bash./prono --port 9000              # change port
+./prono --dir ./public           # serve from specific folder
+./prono --port 8080 --dir www    # combined
+Open in browser: http://localhost:8080 (or chosen port)
+Configuration (planned / basic support)
+Future versions will support a simple prono.ini or command-line arguments.
+Current minimal support (if any) is via flags only.
+Example planned config style:
+ini# prono.ini (not yet implemented in early versions)
+port = 8080
+root = ./public
+index = index.html index.htm
+directory_listing = false
+Creating Your Own Releases
+Linux
+Bashcd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
-
----
-
-# Creating Your Own Binary Releases
-
-## Linux
-
-
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
 strip bin/prono
-
-
-Package:
-
-
 tar -czf prono-linux-x64.tar.gz bin/prono
-
-
----
-
-## Windows
-
-Build using Release mode in Visual Studio or:
-
-
+Windows
+Bashcd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . --config Release
 
-
-Package:
-
-
-zip prono-windows-x64.zip bin/prono.exe
-
-
----
-
-# Repository Structure
-
-Example layout:
-
-
-prono/
-│
+# Compress (from build folder)
+Compress-Archive -Path bin/Release/prono.exe -DestinationPath prono-windows-x64.zip
+# or use 7-Zip / WinRAR
+Project Structure
+textprono/
 ├── src/
-│ ├── main.cpp
-│ ├── server.cpp
-│ └── server.hpp
-│
+│   ├── main.cpp
+│   ├── server.cpp
+│   ├── server.hpp
+│   └── ... (other .cpp/.h files)
 ├── CMakeLists.txt
-├── README.md
-└── build/
+├── README.md           ← you are here
+├── LICENSE
+└── build/              ← generated
+Troubleshooting
+CMake not found
+→ Install from https://cmake.org/download/
+Compiler does not support C++17
+Check version:
+Bashg++ --version           # should be ≥ 7
+clang++ --version       # ≥ 5
+"Permission denied" on Linux
+Bashchmod +x prono
+Port already in use
+→ Change port: ./prono --port 9000
+Binary crashes / no output
 
+Make sure you run it from a folder with some .html files
+Try with absolute path: ./prono --dir /full/path/to/site
 
----
+Contributing
+Contributions welcome!
 
-# Troubleshooting
+Fork the repo
+Create feature/bugfix branch
+Submit pull request
 
-## CMake not found
+Especially looking for:
 
-Install it:
+HTTPS / SSL support
+Better request routing
+Logging
+Configuration file support
+Windows improvements
 
-Linux:
-
-
-sudo apt install cmake
-
-
-Windows:
-
-Download from:
-
-https://cmake.org/download/
-
----
-
-## Compiler errors
-
-Make sure your compiler supports **C++17**.
-
-Check with:
-
-
-g++ --version
-
-
----
-
-# License
-
+License
 MIT License
-"""
 
-
+Made with :heart: by problox42r
+Happy hacking!
