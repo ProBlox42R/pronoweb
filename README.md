@@ -272,12 +272,4 @@ g++ --version
 MIT License
 """
 
-base = Path("/mnt/data")
-cmake_path = base / "CMakeLists.txt"
-md_path = base / "INSTALL.md"
 
-cmake_path.write_text(cmake_content)
-md_path.write_text(md_content)
-
-str(cmake_path), str(md_path)
-Result
