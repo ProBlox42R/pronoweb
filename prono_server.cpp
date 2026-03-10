@@ -20,6 +20,8 @@
 #include <ctime>
 #include <regex>
 #include <unistd.h>   // gethostname
+#include <limits.h>   // PATH_MAX
+#include <libgen.h>   // dirname
 
 using boost::asio::ip::tcp;
 namespace fs = std::filesystem;
@@ -34,8 +36,10 @@ struct Config {
     std::string webroot       = "./www";
     int         port          = 8080;
     int         adminPort     = 8081;   // dashboard lives here
+    std::string mainUrl       = "";     // e.g. http://192.168.1.10:8080 — used for file View links
     std::string serverName    = "Prono/1.0";
     std::string logFile       = "prono.log";
+    std::string configFile    = "prono.cfg"; // absolute path set at startup
     int         maxLogEntries = 500;
     // Toggles
     bool dirListing    = true;
@@ -141,6 +145,175 @@ bool writeFileDisk(const std::string& p, const std::string& c)
     f << c;
     return f.good();
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG PERSISTENCE  — simple key=value flat file, always absolute path
+// ═══════════════════════════════════════════════════════════════════════════
+void saveConfig()
+{
+    // Called with cfgMutex already held — do NOT lock again
+    std::ofstream f(CFG.configFile);
+    if(!f)return;
+    f<<"webroot="     <<CFG.webroot      <<"\n";
+    f<<"port="        <<CFG.port         <<"\n";
+    f<<"adminPort="   <<CFG.adminPort    <<"\n";
+    f<<"mainUrl="     <<CFG.mainUrl      <<"\n";
+    f<<"serverName="  <<CFG.serverName   <<"\n";
+    f<<"logFile="     <<CFG.logFile      <<"\n";
+    f<<"maxLogEntries="<<CFG.maxLogEntries<<"\n";
+    f<<"dirListing="  <<(CFG.dirListing?1:0)<<"\n";
+    f<<"accessLog="   <<(CFG.accessLog?1:0)<<"\n";
+    f<<"colorConsole="<<(CFG.colorConsole?1:0)<<"\n";
+    f<<"xcto="        <<(CFG.xcto?1:0)   <<"\n";
+    f<<"xframe="      <<(CFG.xframe?1:0) <<"\n";
+    f<<"xss="         <<(CFG.xss?1:0)    <<"\n";
+    f<<"hsts="        <<(CFG.hsts?1:0)   <<"\n";
+    f<<"csp="         <<(CFG.csp?1:0)    <<"\n";
+    f<<"cspValue="    <<CFG.cspValue     <<"\n";
+    f<<"referrerPolicy="<<CFG.referrerPolicy<<"\n";
+    f<<"corsEnabled=" <<(CFG.corsEnabled?1:0)<<"\n";
+    f<<"corsCredentials="<<(CFG.corsCredentials?1:0)<<"\n";
+    f<<"corsOrigin="  <<CFG.corsOrigin   <<"\n";
+    f<<"corsMethods=" <<CFG.corsMethods  <<"\n";
+    f<<"corsHeaders=" <<CFG.corsHeaders  <<"\n";
+    f<<"corsMaxAge="  <<CFG.corsMaxAge   <<"\n";
+    f<<"rateLimitEnabled="<<(CFG.rateLimitEnabled?1:0)<<"\n";
+    f<<"rateLimitPerMin=" <<CFG.rateLimitPerMin<<"\n";
+    f<<"rateLimitBurst="  <<CFG.rateLimitBurst<<"\n";
+    f<<"gzipEnabled=" <<(CFG.gzipEnabled?1:0)<<"\n";
+    f<<"gzipLevel="   <<CFG.gzipLevel    <<"\n";
+    f<<"brotliEnabled="<<(CFG.brotliEnabled?1:0)<<"\n";
+    f<<"basicAuthEnabled="<<(CFG.basicAuthEnabled?1:0)<<"\n";
+    f<<"authRealm="   <<CFG.authRealm    <<"\n";
+    // Allowed methods
+    for(auto& m:CFG.allowedMethods)f<<"allowedMethod="<<m<<"\n";
+    // blocked IPs
+    for(auto& ip:CFG.blockedIPs)f<<"blockedIP="<<ip<<"\n";
+    // vhosts
+    for(auto& kv:CFG.vhosts)f<<"vhost="<<kv.first<<"="<<kv.second<<"\n";
+    // custom headers
+    for(auto& kv:CFG.customHeaders)f<<"customHeader="<<kv.first<<"="<<kv.second<<"\n";
+    // cache rules
+    for(auto& kv:CFG.cacheRules)f<<"cacheRule="<<kv.first<<"="<<kv.second<<"\n";
+    // error pages
+    for(auto& kv:CFG.errorPages)f<<"errorPage="<<kv.first<<"="<<kv.second<<"\n";
+    // auth users
+    for(auto& kv:CFG.authUsers)f<<"authUser="<<kv.first<<"="<<kv.second<<"\n";
+    // auth paths
+    for(auto& p:CFG.authPaths)f<<"authPath="<<p<<"\n";
+    // rewrite rules
+    for(auto& r:CFG.rewrites)f<<"rewrite="<<r.pattern<<"|"<<r.replacement<<"|"<<r.code<<"\n";
+    // proxy rules
+    for(auto& kv:CFG.proxyRules)f<<"proxyRule="<<kv.first<<"="<<kv.second<<"\n";
+}
+
+void loadConfig(const std::string& path)
+{
+    std::ifstream f(path);
+    if(!f)return;
+    // Reset collections so we don't double-load
+    CFG.allowedMethods.clear();
+    CFG.blockedIPs.clear();
+    CFG.vhosts.clear();
+    CFG.customHeaders.clear();
+    CFG.cacheRules.clear();
+    CFG.errorPages.clear();
+    CFG.authUsers.clear();
+    CFG.authPaths.clear();
+    CFG.rewrites.clear();
+    CFG.proxyRules.clear();
+
+    std::string line;
+    while(std::getline(f,line)){
+        if(line.empty()||line[0]=='#')continue;
+        auto eq=line.find('=');
+        if(eq==std::string::npos)continue;
+        std::string k=line.substr(0,eq);
+        std::string v=line.substr(eq+1);
+        if(k=="webroot")          CFG.webroot=v;
+        else if(k=="port")        try{CFG.port=std::stoi(v);}catch(...){}
+        else if(k=="adminPort")   try{CFG.adminPort=std::stoi(v);}catch(...){}
+        else if(k=="mainUrl")     CFG.mainUrl=v;
+        else if(k=="serverName")  CFG.serverName=v;
+        else if(k=="logFile")     CFG.logFile=v;
+        else if(k=="maxLogEntries")try{CFG.maxLogEntries=std::stoi(v);}catch(...){}
+        else if(k=="dirListing")  CFG.dirListing=v=="1";
+        else if(k=="accessLog")   CFG.accessLog=v=="1";
+        else if(k=="colorConsole")CFG.colorConsole=v=="1";
+        else if(k=="xcto")        CFG.xcto=v=="1";
+        else if(k=="xframe")      CFG.xframe=v=="1";
+        else if(k=="xss")         CFG.xss=v=="1";
+        else if(k=="hsts")        CFG.hsts=v=="1";
+        else if(k=="csp")         CFG.csp=v=="1";
+        else if(k=="cspValue")    CFG.cspValue=v;
+        else if(k=="referrerPolicy")CFG.referrerPolicy=v;
+        else if(k=="corsEnabled") CFG.corsEnabled=v=="1";
+        else if(k=="corsCredentials")CFG.corsCredentials=v=="1";
+        else if(k=="corsOrigin")  CFG.corsOrigin=v;
+        else if(k=="corsMethods") CFG.corsMethods=v;
+        else if(k=="corsHeaders") CFG.corsHeaders=v;
+        else if(k=="corsMaxAge")  try{CFG.corsMaxAge=std::stoi(v);}catch(...){}
+        else if(k=="rateLimitEnabled")CFG.rateLimitEnabled=v=="1";
+        else if(k=="rateLimitPerMin") try{CFG.rateLimitPerMin=std::stoi(v);}catch(...){}
+        else if(k=="rateLimitBurst")  try{CFG.rateLimitBurst=std::stoi(v);}catch(...){}
+        else if(k=="gzipEnabled") CFG.gzipEnabled=v=="1";
+        else if(k=="gzipLevel")   try{CFG.gzipLevel=std::stoi(v);}catch(...){}
+        else if(k=="brotliEnabled")CFG.brotliEnabled=v=="1";
+        else if(k=="basicAuthEnabled")CFG.basicAuthEnabled=v=="1";
+        else if(k=="authRealm")   CFG.authRealm=v;
+        else if(k=="allowedMethod")CFG.allowedMethods.insert(v);
+        else if(k=="blockedIP")   CFG.blockedIPs.insert(v);
+        else if(k=="vhost"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)CFG.vhosts[v.substr(0,p2)]=v.substr(p2+1);
+        }
+        else if(k=="customHeader"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)CFG.customHeaders[v.substr(0,p2)]=v.substr(p2+1);
+        }
+        else if(k=="cacheRule"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)CFG.cacheRules[v.substr(0,p2)]=v.substr(p2+1);
+        }
+        else if(k=="errorPage"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)try{CFG.errorPages[std::stoi(v.substr(0,p2))]=v.substr(p2+1);}catch(...){}
+        }
+        else if(k=="authUser"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)CFG.authUsers[v.substr(0,p2)]=v.substr(p2+1);
+        }
+        else if(k=="authPath")    CFG.authPaths.push_back(v);
+        else if(k=="rewrite"){
+            auto p1=v.find('|');
+            if(p1!=std::string::npos){
+                auto p2=v.find('|',p1+1);
+                if(p2!=std::string::npos){
+                    RewriteRule r;
+                    r.pattern=v.substr(0,p1);
+                    r.replacement=v.substr(p1+1,p2-p1-1);
+                    try{r.code=std::stoi(v.substr(p2+1));}catch(...){r.code=302;}
+                    CFG.rewrites.push_back(r);
+                }
+            }
+        }
+        else if(k=="proxyRule"){
+            auto p2=v.find('=');
+            if(p2!=std::string::npos)CFG.proxyRules[v.substr(0,p2)]=v.substr(p2+1);
+        }
+    }
+    // Ensure allowedMethods has sane defaults if file was empty/partial
+    if(CFG.allowedMethods.empty())
+        CFG.allowedMethods={"GET","HEAD","POST","OPTIONS"};
+    // Ensure cache rules populated if empty
+    if(CFG.cacheRules.empty())
+        CFG.cacheRules={
+            {".html","no-store"},{".css","public, max-age=604800"},
+            {".js","public, max-age=604800"},{".png","public, max-age=2592000"},
+            {".jpg","public, max-age=2592000"},{".webp","public, max-age=2592000"},
+            {".woff2","public, max-age=31536000, immutable"},{".json","public, max-age=600"},
+        };
+}
+
 long uptimeSecs()
 {
     return (long)std::chrono::duration_cast<std::chrono::seconds>(
@@ -527,6 +700,20 @@ std::string fileRows(const std::string& relDir)
             mod=tb;
         }catch(...){}
         std::string wp="/"+(relDir.empty()?"":relDir+"/")+name;
+        // Build absolute URL for View — always points to the web server, not the admin port
+        std::string viewUrl;
+        {
+            std::lock_guard<std::mutex> lk(cfgMutex);
+            if(!CFG.mainUrl.empty()){
+                // strip trailing slash from mainUrl
+                std::string base=CFG.mainUrl;
+                while(!base.empty()&&base.back()=='/')base.pop_back();
+                viewUrl=base+wp;
+            }else{
+                // Fall back: same host, web port
+                viewUrl="http://127.0.0.1:"+std::to_string(CFG.port)+wp;
+            }
+        }
         rows+="<tr>"
             "<td>"+ico+"</td>"
             "<td style='color:var(--text)'>"+escH(name)+"</td>"
@@ -534,7 +721,7 @@ std::string fileRows(const std::string& relDir)
             "<td><span class='tag "+tc+"'>"+escH(eu)+"</span></td>"
             "<td>"+mod+"</td>"
             "<td style='display:flex;gap:5px;padding:6px 12px'>"
-            "<a href='"+escH(wp)+"' target='_blank' class='btn btn-sm'>View</a>"
+            "<a href='"+escH(viewUrl)+"' target='_blank' class='btn btn-sm'>View</a>"
             "<a href='/pronoadmin/download?file="+escH(wp)+"' class='btn btn-sm'>⬇</a>"
             "<a href='/pronoadmin/delete?file="+escH(wp)+"&dir="+escH(relDir)
             +"' class='btn btn-sm btn-danger' onclick=\"return confirm('Delete "+escH(name)+"?')\">✕</a>"
@@ -1028,6 +1215,8 @@ std::string dashboard(const std::string& activeTab="overview",
        "<input class='fi' name='serverName' value='"+escH(CFG.serverName)+"'></div>"
        "<div class='fg'><label class='fl'>Web Root</label>"
        "<input class='fi' name='webroot' value='"+escH(CFG.webroot)+"'></div>"
+       "<div class='fg'><label class='fl'>Main URL (used for file View links)</label>"
+       "<input class='fi' name='mainUrl' placeholder='http://192.168.1.10:"+std::to_string(CFG.port)+"' value='"+escH(CFG.mainUrl)+"'></div>"
        "<div class='fg'><label class='fl'>Log File</label>"
        "<input class='fi' name='logFile' value='"+escH(CFG.logFile)+"'></div>"
        "<div class='fg'><label class='fl'>Max Log Entries</label>"
@@ -1406,19 +1595,26 @@ void handleAdmin(tcp::socket socket)
         }
         // ── Config endpoints ──────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/savecfg"){
-            std::lock_guard<std::mutex> lk(cfgMutex);
-            if(params.count("serverName")&&!params["serverName"].empty())CFG.serverName=params["serverName"];
-            if(params.count("webroot")&&!params["webroot"].empty())CFG.webroot=params["webroot"];
-            if(params.count("logFile")&&!params["logFile"].empty())CFG.logFile=params["logFile"];
-            if(params.count("maxLog"))try{CFG.maxLogEntries=std::stoi(params["maxLog"]);}catch(...){}
+            {
+                std::lock_guard<std::mutex> lk(cfgMutex);
+                if(params.count("serverName")&&!params["serverName"].empty())CFG.serverName=params["serverName"];
+                if(params.count("webroot")&&!params["webroot"].empty())CFG.webroot=params["webroot"];
+                if(params.count("logFile")&&!params["logFile"].empty())CFG.logFile=params["logFile"];
+                if(params.count("maxLog"))try{CFG.maxLogEntries=std::stoi(params["maxLog"]);}catch(...){}
+                if(params.count("mainUrl"))CFG.mainUrl=params["mainUrl"];
+                saveConfig(); // persist while lock is held
+            } // lock released here before dashboard() / buildResp()
             flash="Core settings saved.";
             resp=buildResp(dashboard("config","",flash,flashType));
         }
         else if(cleanPath=="/pronoadmin/savemethods"){
-            std::lock_guard<std::mutex> lk(cfgMutex);
-            CFG.allowedMethods.clear();
-            for(auto& m:{"GET","HEAD","POST","PUT","DELETE","OPTIONS","PATCH"})
-                if(params.count(std::string("m_")+m))CFG.allowedMethods.insert(m);
+            {
+                std::lock_guard<std::mutex> lk(cfgMutex);
+                CFG.allowedMethods.clear();
+                for(auto& m:{"GET","HEAD","POST","PUT","DELETE","OPTIONS","PATCH"})
+                    if(params.count(std::string("m_")+m))CFG.allowedMethods.insert(m);
+                saveConfig();
+            }
             flash="Allowed methods updated.";
             resp=buildResp(dashboard("config","",flash,flashType));
         }
@@ -1445,18 +1641,24 @@ void handleAdmin(tcp::socket socket)
             resp=buildResp(msg,"text/plain");
         }
         else if(cleanPath=="/pronoadmin/savecsp"){
-            std::lock_guard<std::mutex> lk(cfgMutex);
-            if(params.count("csp"))CFG.cspValue=params["csp"];
-            if(params.count("ref"))CFG.referrerPolicy=params["ref"];
+            {
+                std::lock_guard<std::mutex> lk(cfgMutex);
+                if(params.count("csp"))CFG.cspValue=params["csp"];
+                if(params.count("ref"))CFG.referrerPolicy=params["ref"];
+                saveConfig();
+            }
             flash="Security header settings saved.";
             resp=buildResp(dashboard("headers","",flash,flashType));
         }
         else if(cleanPath=="/pronoadmin/savecors"){
-            std::lock_guard<std::mutex> lk(cfgMutex);
-            if(params.count("origin")) CFG.corsOrigin=params["origin"];
-            if(params.count("methods"))CFG.corsMethods=params["methods"];
-            if(params.count("headers"))CFG.corsHeaders=params["headers"];
-            if(params.count("maxage"))try{CFG.corsMaxAge=std::stoi(params["maxage"]);}catch(...){}
+            {
+                std::lock_guard<std::mutex> lk(cfgMutex);
+                if(params.count("origin")) CFG.corsOrigin=params["origin"];
+                if(params.count("methods"))CFG.corsMethods=params["methods"];
+                if(params.count("headers"))CFG.corsHeaders=params["headers"];
+                if(params.count("maxage"))try{CFG.corsMaxAge=std::stoi(params["maxage"]);}catch(...){}
+                saveConfig();
+            }
             flash="CORS settings saved.";
             resp=buildResp(dashboard("headers","",flash,flashType));
         }
@@ -1464,6 +1666,7 @@ void handleAdmin(tcp::socket socket)
             if(params.count("name")&&params.count("value")&&!params["name"].empty()){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.customHeaders[params["name"]]=params["value"];
+                saveConfig();
                 flash="Header added: "+params["name"];
             }else{flash="Header name and value required.";flashType="err";}
             resp=buildResp(dashboard("headers","",flash,flashType));
@@ -1472,6 +1675,7 @@ void handleAdmin(tcp::socket socket)
             if(params.count("name")){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.customHeaders.erase(params["name"]);
+                saveConfig();
                 flash="Header removed.";
             }
             resp=buildResp(dashboard("headers","",flash,flashType));
@@ -1479,9 +1683,12 @@ void handleAdmin(tcp::socket socket)
         // ── Vhosts ────────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/addvhost"){
             if(params.count("host")&&params.count("root")&&!params["host"].empty()&&!params["root"].empty()){
-                std::lock_guard<std::mutex> lk(cfgMutex);
-                CFG.vhosts[params["host"]]=params["root"];
-                fs::create_directories(params["root"]);
+                {
+                    std::lock_guard<std::mutex> lk(cfgMutex);
+                    CFG.vhosts[params["host"]]=params["root"];
+                    fs::create_directories(params["root"]);
+                    saveConfig();
+                }
                 flash="Vhost added: "+params["host"];
             }else{flash="Hostname and root are required.";flashType="err";}
             resp=buildResp(dashboard("vhosts","",flash,flashType));
@@ -1490,19 +1697,23 @@ void handleAdmin(tcp::socket socket)
             if(params.count("host")){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.vhosts.erase(params["host"]);
+                saveConfig();
                 flash="Vhost removed.";
             }
             resp=buildResp(dashboard("vhosts","",flash,flashType));
         }
-        // ── Rewrites        // ── Rewrites ───────────────────────────────────────────────────
+        // ── Rewrites ───────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/addrewrite"){
             if(params.count("pattern")&&params.count("replacement")&&!params["pattern"].empty()){
                 RewriteRule rr;
                 rr.pattern=params["pattern"];
                 rr.replacement=params["replacement"];
                 rr.code=params.count("code")?std::stoi(params["code"]):302;
-                std::lock_guard<std::mutex> lk(cfgMutex);
-                CFG.rewrites.push_back(rr);
+                {
+                    std::lock_guard<std::mutex> lk(cfgMutex);
+                    CFG.rewrites.push_back(rr);
+                    saveConfig();
+                }
                 flash="Rewrite rule added.";
             }else{flash="Pattern and replacement are required.";flashType="err";}
             resp=buildResp(dashboard("rewrites","",flash,flashType));
@@ -1513,15 +1724,17 @@ void handleAdmin(tcp::socket socket)
                 int idx=std::stoi(params["i"]);
                 if(idx>=0&&idx<(int)CFG.rewrites.size())
                     CFG.rewrites.erase(CFG.rewrites.begin()+idx);
+                saveConfig();
                 flash="Rewrite rule removed.";
             }
             resp=buildResp(dashboard("rewrites","",flash,flashType));
         }
-        // ── Cache        // ── Cache ──────────────────────────────────────────────────────
+        // ── Cache ──────────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/addcache"){
             if(params.count("ext")&&params.count("val")&&!params["ext"].empty()){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.cacheRules[params["ext"]]=params["val"];
+                saveConfig();
                 flash="Cache rule added for "+params["ext"];
             }else{flash="Extension and value are required.";flashType="err";}
             resp=buildResp(dashboard("cache","",flash,flashType));
@@ -1530,14 +1743,19 @@ void handleAdmin(tcp::socket socket)
             if(params.count("ext")){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.cacheRules.erase(params["ext"]);
+                saveConfig();
                 flash="Cache rule removed.";
             }
             resp=buildResp(dashboard("cache","",flash,flashType));
         }
         // ── Rate limit ─────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/saverl"){
-            if(params.count("rlRate")) try{CFG.rateLimitPerMin=std::stoi(params["rlRate"]);}catch(...){}
-            if(params.count("rlBurst"))try{CFG.rateLimitBurst=std::stoi(params["rlBurst"]);}catch(...){}
+            {
+                std::lock_guard<std::mutex> lk(cfgMutex);
+                if(params.count("rlRate")) try{CFG.rateLimitPerMin=std::stoi(params["rlRate"]);}catch(...){}
+                if(params.count("rlBurst"))try{CFG.rateLimitBurst=std::stoi(params["rlBurst"]);}catch(...){}
+                saveConfig();
+            }
             flash="Rate limit settings saved.";
             resp=buildResp(dashboard("ratelimit","",flash,flashType));
         }
@@ -1547,10 +1765,12 @@ void handleAdmin(tcp::socket socket)
             resp=buildResp(dashboard("ratelimit","",flash,flashType));
         }
         // ── Firewall        // ── Firewall ───────────────────────────────────────────────────
+        // ── Firewall ───────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/block"){
             if(params.count("ip")&&!params["ip"].empty()){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.blockedIPs.insert(params["ip"]);
+                saveConfig();
                 flash="IP blocked: "+params["ip"];
             }else{flash="IP address required.";flashType="err";}
             resp=buildResp(dashboard("firewall","",flash,flashType));
@@ -1559,6 +1779,7 @@ void handleAdmin(tcp::socket socket)
             if(params.count("ip")){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.blockedIPs.erase(params["ip"]);
+                saveConfig();
                 flash="IP unblocked: "+params["ip"];
             }
             resp=buildResp(dashboard("firewall","",flash,flashType));
@@ -1589,6 +1810,7 @@ void handleAdmin(tcp::socket socket)
             if(params.count("code")&&params.count("path")&&!params["path"].empty()){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.errorPages[std::stoi(params["code"])]=params["path"];
+                saveConfig();
                 flash="Error page override set.";
             }else{flash="Code and path required.";flashType="err";}
             resp=buildResp(dashboard("errorpages","",flash,flashType));
@@ -1597,6 +1819,7 @@ void handleAdmin(tcp::socket socket)
             if(params.count("code")){
                 std::lock_guard<std::mutex> lk(cfgMutex);
                 CFG.errorPages.erase(std::stoi(params["code"]));
+                saveConfig();
                 flash="Override removed.";
             }
             resp=buildResp(dashboard("errorpages","",flash,flashType));
@@ -1829,9 +2052,47 @@ void handleClient(tcp::socket socket)
 // ═══════════════════════════════════════════════════════════════════════════
 int main(int argc,char* argv[])
 {
+    // ── Resolve the directory the executable lives in ────────────────────
+    // This is critical for systemctl: CWD is "/" so relative paths fail.
+    std::string exeDir;
+    {
+        char buf[PATH_MAX]={};
+        ssize_t n=readlink("/proc/self/exe",buf,sizeof(buf)-1);
+        if(n>0){
+            buf[n]='\0';
+            exeDir=std::string(dirname(buf));
+        } else {
+            exeDir=fs::current_path().string();
+        }
+    }
+
     if(argc>=2)CFG.port      =std::stoi(argv[1]);
     if(argc>=3)CFG.webroot   =argv[2];
     if(argc>=4)CFG.adminPort =std::stoi(argv[3]);
+
+    // Make webroot, logFile, configFile absolute relative to exe dir
+    auto makeAbs=[&](const std::string& p)->std::string{
+        if(p.empty()||p[0]=='/')return p;
+        return exeDir+"/"+p;
+    };
+    CFG.webroot    = makeAbs(CFG.webroot);
+    CFG.logFile    = makeAbs(CFG.logFile);
+    CFG.configFile = makeAbs("prono.cfg");
+
+    // Load persisted config (overrides defaults, but CLI args override config)
+    {
+        int cliPort      = (argc>=2)?std::stoi(argv[1]):-1;
+        int cliAdminPort = (argc>=4)?std::stoi(argv[3]):-1;
+        std::string cliWebroot = (argc>=3)?std::string(argv[2]):"";
+        loadConfig(CFG.configFile);
+        // CLI args take precedence over saved config
+        if(cliPort>0)       CFG.port=cliPort;
+        if(cliAdminPort>0)  CFG.adminPort=cliAdminPort;
+        if(!cliWebroot.empty())CFG.webroot=makeAbs(cliWebroot);
+        // Re-absolutify after loadConfig (config may store relative paths)
+        CFG.webroot = makeAbs(CFG.webroot);
+        CFG.logFile = makeAbs(CFG.logFile);
+    }
 
     fs::create_directories(CFG.webroot);
     if(!fs::exists(CFG.webroot+"/index.html")){
@@ -1868,6 +2129,7 @@ int main(int argc,char* argv[])
         "║      by probloxworld                                 ║\n"
         "╠══════════════════════════════════════════════════════╣\n"
         "║  WebRoot    : "<<CFG.webroot<<"\n"
+        "║  Config     : "<<CFG.configFile<<"\n"
         "║  Web port   : "<<CFG.port<<"  → http://"<<lanIP<<":"<<CFG.port<<"/\n"
         "║  Admin port : "<<CFG.adminPort<<"  → http://"<<lanIP<<":"<<CFG.adminPort<<"/pronoadmin\n"
         "╚══════════════════════════════════════════════════════╝\n\n"
