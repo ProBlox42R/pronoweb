@@ -825,7 +825,7 @@ body{display:flex;flex-direction:column;min-height:100vh;}
         "<a href='/pronoadmin' class='btn'>⚙ Admin</a>"
         "</div></div></div>"
         "<div class='ef'>"
-        "<img src='https://cdn.brandfetch.io/idD7af6BB5/w/500/h/500/theme/dark/logo.png?c=1dxbfHSJFAPEGdCLU4o5B' alt=''>"
+        "<img src='https://prono.probloxworld.com/favicon-96x96.png' alt=''>"
         "<span>Prono Server &mdash; <a href='https://probloxworld.com' target='_blank'>probloxworld</a></span>"
         "</div></body></html>\n";
 }
@@ -1087,7 +1087,7 @@ std::string dashboard(const std::string& activeTab="overview",
     // TOPBAR
     "<div class='topbar'>"
     "<div class='logo'>"
-    "<img src='https://cdn.brandfetch.io/idD7af6BB5/w/500/h/500/theme/dark/logo.png?c=1dxbfHSJFAPEGdCLU4o5B' alt='' onerror=\"this.style.display='none'\">"
+    "<img src='https://prono.probloxworld.com/favicon-96x96.png' alt='' onerror=\"this.style.display='none'\">"
     "<div><div class='ln'>Prono Server</div><div class='ls'>by probloxworld</div></div>"
     "</div>"
     "<div class='tbc'>"
@@ -1442,7 +1442,7 @@ std::string dashboard(const std::string& activeTab="overview",
 
     // FOOTER
     h+="<div class='footer'>"
-       "<img src='https://cdn.brandfetch.io/idD7af6BB5/w/500/h/500/theme/dark/logo.png?c=1dxbfHSJFAPEGdCLU4o5B' alt=''>"
+       "<img src='https://prono.probloxworld.com/favicon-96x96.png' alt=''>"
        "<span>Prono Server &mdash; Built by <a href='https://probloxworld.com' target='_blank'>probloxworld</a> &mdash; v1.0</span>"
        "</div>\n";
 
@@ -2123,7 +2123,7 @@ int main(int argc,char* argv[])
           "justify-content:center;min-height:100vh;gap:16px;}"
           "h1{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:48px;color:var(--orange);}"
           "</style></head><body>"
-          "<img src='https://cdn.brandfetch.io/idD7af6BB5/w/500/h/500/theme/dark/logo.png?c=1dxbfHSJFAPEGdCLU4o5B'"
+          "<img src='https://prono.probloxworld.com/favicon-96x96.png'"
           " style='width:64px;border-radius:12px' alt='probloxworld'>"
           "<h1>Prono Server</h1>"
           "<p style='color:var(--text2)'>Place your files in "
