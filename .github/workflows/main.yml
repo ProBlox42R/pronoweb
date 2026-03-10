@@ -56,11 +56,11 @@ jobs:
             mingw-w64-x86_64-boost
             mingw-w64-x86_64-gcc
 
-      - name: Build
+- name: Build
         shell: msys2 {0}
         run: |
           g++ -std=c++17 -O2 -o prono.exe prono_server.cpp \
-            -lboost_system -lws2_32 -lwsock32 -lpthread -static
+            -lws2_32 -lwsock32 -lpthread -static
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
