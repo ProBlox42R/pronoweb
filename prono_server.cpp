@@ -707,19 +707,20 @@ std::string fileRows(const std::string& relDir)
             char tb[32];std::strftime(tb,sizeof(tb),"%Y-%m-%d %H:%M",std::localtime(&tt));
             mod=tb;
         }catch(...){}
-        std::string wp="/"+(relDir.empty()?"":relDir+"/")+name;
+        // wp is relative (no leading slash) so safePath() accepts it
+        // and CFG.webroot+"/"+wp builds correctly
+        std::string wp=(relDir.empty()?"":relDir+"/")+name;
         // Build absolute URL for View — always points to the web server, not the admin port
         std::string viewUrl;
         {
             std::lock_guard<std::mutex> lk(cfgMutex);
+            std::string webPath="/"+wp; // leading slash only for HTTP URLs
             if(!CFG.mainUrl.empty()){
-                // strip trailing slash from mainUrl
                 std::string base=CFG.mainUrl;
                 while(!base.empty()&&base.back()=='/')base.pop_back();
-                viewUrl=base+wp;
+                viewUrl=base+webPath;
             }else{
-                // Fall back: same host, web port
-                viewUrl="http://127.0.0.1:"+std::to_string(CFG.port)+wp;
+                viewUrl="http://127.0.0.1:"+std::to_string(CFG.port)+webPath;
             }
         }
         rows+="<tr>"
@@ -1857,18 +1858,18 @@ void handleAdmin(tcp::socket socket)
         }
         // ── File ops ───────────────────────────────────────────────────
         else if(cleanPath=="/pronoadmin/delete"){
-            if(params.count("file")&&safePath(params["file"])){
-                std::string fp=CFG.webroot+params["file"];
+            if(params.count("file")&&!params["file"].empty()&&safePath(params["file"])){
+                std::string fp=CFG.webroot+"/"+params["file"];
                 if(fs::exists(fp)&&fs::is_regular_file(fp)){
                     fs::remove(fp);flash="Deleted: "+params["file"];
-                }else{flash="File not found.";flashType="err";}
-            }
+                }else{flash="File not found: "+params["file"];flashType="err";}
+            }else{flash="Invalid file path.";flashType="err";}
             std::string d=params.count("dir")?params["dir"]:"";
             resp=buildResp(dashboard("files",d,flash,flashType));
         }
         else if(cleanPath=="/pronoadmin/download"){
             if(params.count("file")&&safePath(params["file"])){
-                std::string fp=CFG.webroot+params["file"];
+                std::string fp=CFG.webroot+"/"+params["file"];
                 if(fs::exists(fp)&&fs::is_regular_file(fp)){
                     std::string content=readFile(fp);
                     std::string fname=fs::path(fp).filename().string();
