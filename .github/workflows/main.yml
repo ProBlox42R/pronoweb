@@ -209,10 +209,7 @@ jobs:
         with:
           tag_name: ${{ needs.build-linux.outputs.tag }}
           name: "Prono ${{ needs.build-linux.outputs.tag }} (${{ needs.build-linux.outputs.date }})"
-          body: |
-            Automated build triggered by update to `prono_server.cpp`.
-            **Change:** ${{ needs.build-linux.outputs.msg }}
-            **Commit:** ${{ github.sha }}
+          body_path: dist/README.md
           files: |
             dist/prono
             dist/prono.exe
