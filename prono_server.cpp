@@ -2,7 +2,7 @@
  * Prono Web Server — by probloxworld
  * Build:  g++ -std=c++17 -O2 -o prono prono_server.cpp -lboost_system -lpthread
  * Run:    ./prono [port] [webroot]
- * Access: http://<your-lan-ip>:8080/pronoadmin  (from any device on network)w lol ddddddddddddddddddddd
+ * Access: http://<your-lan-ip>:8080/pronoadmin  (from any device on network)
  */
 #include <boost/asio.hpp>
 #include <iostream>
@@ -19,9 +19,17 @@
 #include <algorithm>
 #include <ctime>
 #include <regex>
-#include <unistd.h>   // gethostname
-#include <limits.h>   // PATH_MAX
-#include <libgen.h>   // dirname
+#ifdef _WIN32
+  #include <winsock2.h> // gethostname on Windows (included via boost/asio.hpp too)
+#else
+  #include <unistd.h>   // gethostname
+#endif
+#ifdef _WIN32
+  #include <windows.h>  // GetModuleFileNameW
+#else
+  #include <limits.h>   // PATH_MAX
+  #include <libgen.h>   // dirname
+#endif
 
 using boost::asio::ip::tcp;
 namespace fs = std::filesystem;
@@ -2056,14 +2064,27 @@ int main(int argc,char* argv[])
     // This is critical for systemctl: CWD is "/" so relative paths fail.
     std::string exeDir;
     {
-        char buf[PATH_MAX]={};
-        ssize_t n=readlink("/proc/self/exe",buf,sizeof(buf)-1);
+#ifdef _WIN32
+        wchar_t wbuf[32768]={};
+        DWORD n=GetModuleFileNameW(nullptr,wbuf,32767);
         if(n>0){
-            buf[n]='\0';
-            exeDir=std::string(dirname(buf));
+            // Convert wide string to narrow
+            char nbuf[32768]={};
+            WideCharToMultiByte(CP_UTF8,0,wbuf,-1,nbuf,sizeof(nbuf),nullptr,nullptr);
+            exeDir=fs::path(nbuf).parent_path().string();
         } else {
             exeDir=fs::current_path().string();
         }
+#else
+        char buf[4096]={};
+        ssize_t n=readlink("/proc/self/exe",buf,sizeof(buf)-1);
+        if(n>0){
+            buf[n]='\0';
+            exeDir=fs::path(buf).parent_path().string();
+        } else {
+            exeDir=fs::current_path().string();
+        }
+#endif
     }
 
     if(argc>=2)CFG.port      =std::stoi(argv[1]);
