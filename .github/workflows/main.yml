@@ -6,6 +6,7 @@ on:
       - 'prono_server.cpp'
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-linux:
@@ -46,17 +47,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Boost via vcpkg
-        run: |
-          vcpkg install boost-asio boost-system --triplet x64-windows-static
-          echo "VCPKG_ROOT=C:/vcpkg" >> $env:GITHUB_ENV
+      - name: Install Boost via MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-gcc
 
       - name: Build
+        shell: msys2 {0}
         run: |
-          g++ -std=c++17 -O2 -o prono.exe prono_server.cpp `
-            -IC:/vcpkg/installed/x64-windows-static/include `
-            -LC:/vcpkg/installed/x64-windows-static/lib `
-            -lboost_system-vc143-mt-s-x64-1_83 -lws2_32 -lwsock32 -lpthread -static
+          g++ -std=c++17 -O2 -o prono.exe prono_server.cpp \
+            -lws2_32 -lwsock32 -lpthread -static
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
@@ -102,8 +106,8 @@ jobs:
 
           | Platform | File | Notes |
           |----------|------|-------|
-          | 🐧 Linux (x64) | \`prono\` | Built on Ubuntu, dynamically linked |
-          | 🪟 Windows (x64) | \`prono.exe\` | Statically linked, no install needed |
+          | 🐧 Linux (x64) | \`prono\` | Built on Ubuntu |
+          | 🪟 Windows (x64) | \`prono.exe\` | Built with MSYS2 MinGW64 |
 
           ---
 
@@ -131,8 +135,6 @@ jobs:
           http://<your-ip>:<adminPort>/pronoadmin
           \`\`\`
 
-          From the dashboard you can configure everything live — no restart needed (except port changes).
-
           ---
 
           ## ⚙️ Features
@@ -150,7 +152,6 @@ jobs:
           - 🧩 Custom response headers
           - 📦 Cache-Control rules per file extension
           - ❌ Custom error pages per status code
-          - 🔗 Proxy rules
           - 💾 Config auto-saved to \`prono.cfg\` next to the binary
 
           ---
@@ -163,15 +164,15 @@ jobs:
           g++ -std=c++17 -O2 -o prono prono_server.cpp -lboost_system -lpthread
           \`\`\`
 
-          ### Windows (MinGW + vcpkg)
-          \`\`\`cmd
-          vcpkg install boost-asio boost-system --triplet x64-windows-static
+          ### Windows (MSYS2 MinGW64)
+          \`\`\`bash
+          pacman -S mingw-w64-x86_64-boost mingw-w64-x86_64-gcc
           g++ -std=c++17 -O2 -o prono.exe prono_server.cpp -lboost_system -lws2_32 -lwsock32 -lpthread -static
           \`\`\`
 
           ---
 
-          ## 🏃 Running as a Service (Linux / systemd)
+          ## 🏃 Running as a systemd Service (Linux)
 
           \`\`\`ini
           [Unit]
@@ -208,10 +209,7 @@ jobs:
         with:
           tag_name: ${{ needs.build-linux.outputs.tag }}
           name: "Prono ${{ needs.build-linux.outputs.tag }} (${{ needs.build-linux.outputs.date }})"
-          body: |
-            Automated build triggered by update to `prono_server.cpp`.
-            **Change:** ${{ needs.build-linux.outputs.msg }}
-            **Commit:** ${{ github.sha }}
+          body_path: dist/README.md
           files: |
             dist/prono
             dist/prono.exe
