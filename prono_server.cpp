@@ -2,7 +2,7 @@
  * Prono Web Server — by probloxworld
  * Build:  g++ -std=c++17 -O2 -o prono prono_server.cpp -lboost_system -lpthread
  * Run:    ./prono [port] [webroot]
- * Access: http://<your-lan-ip>:8080/pronoadmin  (from any device on network)
+ * Access: http://<your-lan-ip>:8080/pronoadmin  (from any device on network)w lol
  */
 #include <boost/asio.hpp>
 #include <iostream>
